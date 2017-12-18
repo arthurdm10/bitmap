@@ -6,7 +6,6 @@
 #include <string.h>
 
 
-
 #ifndef _WIN32
 typedef unsigned char byte;
 typedef unsigned short WORD;
@@ -22,7 +21,7 @@ typedef unsigned int UINT;
 
 class Bitmap {
 public:
-    bool operator== (const Bitmap& other);
+
 
 	struct Pixel {
 		byte b, g, r;
@@ -41,6 +40,11 @@ public:
 
     };
 
+    //improve this...
+    typedef std::vector<std::vector<Bitmap::Pixel>> PixelMatrix;
+
+
+    bool operator== (const Bitmap& other);
 
 private:
 	struct _bitmapHeader {
@@ -147,32 +151,32 @@ private:
 
 
 	template<typename T>
-    void readFromStream(std::ifstream& file, T& dest, const size_t& sz = sizeof(T)) {
+    void readFromStream(std::fstream& file, T& dest, const size_t& sz = sizeof(T)){
 		file.read(reinterpret_cast<char*>(&dest), sz);
 	}
 
 	template<typename T>
-	void writeToStream(std::ofstream& file, T& src, const size_t& sz = sizeof(T)) {
+    void writeToStream(std::fstream& file, T& src, const size_t& sz = sizeof(T)){
 		file.write(reinterpret_cast<char*>(&src), sz);
 	}
 
-	size_t fileSize(std::ifstream& file);
+    size_t fileSize(std::fstream& file) const;
 
 	
 private:
 
     std::string fileName;
 
-    std::ifstream file;
-	_bitmapHeader bitmapHeader;
-	_dibHeader	  dibHeader;
+    std::fstream file;
+    _bitmapHeader bitmapHeader;
+    _dibHeader	  dibHeader;
 
 	size_t	_fileSize{ 0 };
 
 	void readBitmapHeader();
 	void readDibHeader();
 
-	std::vector<std::vector<Pixel>> pixels;
+    PixelMatrix pixels;
 
 
 	DWORD _width, _height;
@@ -184,14 +188,18 @@ public:
     Bitmap(Bitmap&& bitmap);
     Bitmap(const Bitmap& bitmap);
 	Bitmap(const std::string& filename);
-
+    Bitmap(PixelMatrix& pixels);
 	bool load(const std::string& filename);
 
-	//create a bitmap from a pixel matrix
+    //create a bitmap from a matrix of pixels
     //the given matrix will be moved
-	bool load(std::vector<std::vector<Pixel>>& pixels);
+    bool load(PixelMatrix& pixels);
+    bool save(const std::string& fileName);
 
-	bool save(const std::string& fileName);
+
+    void mirror();
+
+
 
     //close the file,
     //but keep all the data
@@ -201,8 +209,7 @@ public:
 
 	void rgbToGrayScale();
 
-	
-	std::vector<std::vector<Pixel>>& getPixels();
+    PixelMatrix& getPixels();
 
 	//file size in bytes
     inline size_t size() const{
