@@ -1,6 +1,6 @@
 #include <iostream>
 #include <time.h>
-
+#include "Bitmap.h"
 using namespace std;
 
 int main(){
