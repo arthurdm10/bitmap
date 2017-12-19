@@ -9,13 +9,7 @@
 #ifndef _WIN32
 typedef unsigned char byte;
 typedef unsigned short WORD;
-
-#ifdef __amd64__
 typedef unsigned int DWORD;
-#elif __i386__
-typedef unsigned long DWORD;
-#endif
-
 typedef unsigned int UINT;
 #endif
 
@@ -199,16 +193,7 @@ public:
 
     void mirror();
 
-
-
-    //close the file,
-    //but keep all the data
-    inline void close(){
-        this->file.close();
-    }
-
-	void rgbToGrayScale();
-
+    void rgbToGrayScale();
     PixelMatrix& getPixels();
 
 	//file size in bytes
@@ -229,12 +214,12 @@ public:
     Bitmap& operator=(const Bitmap& other);    //copy
     Bitmap& operator=(Bitmap&& other);          //move
 
-    operator bool() const{
-        return this->file.is_open() || this->pixels.size() > 0;
+    inline operator bool() const{
+        return this->pixels.size() > 0;
     }
 
-    bool operator!(){
-        return !(this->file.is_open());
+    inline bool operator!(){
+        return !(this);
     }
 
 	~Bitmap();

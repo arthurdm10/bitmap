@@ -12,7 +12,6 @@ Bitmap::Bitmap(Bitmap &&bitmap){
     this->_width = std::move(bitmap._width);
     this->_height = std::move(bitmap._height);
     this->_fileSize = std::move(bitmap._fileSize);
-    this->file = std::move(bitmap.file);
     this->dibHeader = std::move(bitmap.dibHeader);
     this->bitmapHeader = std::move(bitmap.bitmapHeader);
 }
@@ -34,18 +33,24 @@ Bitmap::Bitmap(Bitmap::PixelMatrix &pixels){
     this->load(pixels);
 }
 
-bool Bitmap::load(const std::string& fileName) {
+bool Bitmap::load(const std::string& fname) {
     if (!this->file.is_open()) {
-        this->fileName = fileName;
-        this->file.open(fileName, std::ios::binary | std::ios::in);
+        this->file.open(fname.c_str(), std::ios::binary | std::ios::in);
         if(file.is_open()){
             this->readBitmapHeader();
             this->readDibHeader();
+        }else{
+            return false;
         }
     }
 
     this->_width = this->dibHeader.width;
     this->_height = this->dibHeader.height;
+
+    if(this->_width == 0 || this->_height == 0){
+        this->file.close();
+        return false;
+    }
 
     this->_fileSize = this->fileSize(this->file);
     this->file.seekg(this->bitmapHeader.dataOffset);
@@ -59,10 +64,11 @@ bool Bitmap::load(const std::string& fileName) {
                   [&](auto& vet){
         vet.resize(this->_width);
         file.read(reinterpret_cast<char*>(&vet[0]), sz);
-        file.seekg(this->_width % 4, file.cur);
+        file.seekg(this->_width % 4, file.cur); //row padding
     });
 
-    return this->file.is_open();
+    this->file.close();
+    return true;
 }
 bool Bitmap::load(PixelMatrix& pixels){
     if (pixels.size() == 0 || pixels[0].size() == 0) {
@@ -237,28 +243,13 @@ Bitmap& Bitmap::operator=(Bitmap&& other){
 }
 
 bool Bitmap::operator==(const Bitmap& other){
-    if(other._width != this->_width || other._height != this->_height){
-        return  false;
-    }
 
-    if(other.pixels != this->pixels){
-        return false;
-    }
-
-    //if _fileSize == 0, then the data came from a matrix of pixels
-    //so we dont have to check the headers
-//    if(this->_fileSize != 0 && other._fileSize != 0){
-//        if(this->dibHeader !=  other.dibHeader || this->bitmapHeader != other.bitmapHeader){
-//            return false;
-//        }
-//    }
-
-    return true;
+    return(other._width == this->_width &&
+           other._height == this->_height &&
+           other.pixels == this->pixels);
 }
 
-Bitmap::~Bitmap(){
-    this->file.close();
-}
+Bitmap::~Bitmap() { }
 
 size_t Bitmap::fileSize(std::fstream& file) const{
     if (file.is_open()) {
