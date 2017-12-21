@@ -15,10 +15,8 @@ typedef unsigned int UINT;
 
 class Bitmap {
 public:
-
-
 	struct Pixel {
-		byte b, g, r;
+        byte b, g, r;
 
         Pixel() { }
 
@@ -34,7 +32,6 @@ public:
 
     };
 
-    //improve this...
     typedef std::vector<std::vector<Bitmap::Pixel>> PixelMatrix;
 
 
@@ -46,7 +43,8 @@ private:
 
         WORD headerType;
 		DWORD fileSize;
-		WORD r0, r1;
+        WORD r0{0},
+             r1{0};
 		DWORD dataOffset;
 
         _bitmapHeader& operator= (const _bitmapHeader&& other){
@@ -69,9 +67,7 @@ private:
                     this->dataOffset == other.dataOffset);
         }
 
-        bool operator!= (const _bitmapHeader& other){
-            return !(*this == other);
-        }
+        bool operator!= (const _bitmapHeader& other){ return !(*this == other); }
 	};
 
 	struct _dibHeader {
@@ -123,9 +119,7 @@ private:
             return *this;
         }
 
-        bool operator!= (const _dibHeader& other){
-            return !(*this == other);
-        }
+        bool operator!= (const _dibHeader& other){ return !(*this == other); }
 
         bool operator== (const _dibHeader& other){
             return (this->headerSize == other.headerSize &&
@@ -154,30 +148,21 @@ private:
 		file.write(reinterpret_cast<char*>(&src), sz);
 	}
 
-    size_t fileSize(std::fstream& file) const;
-
-	
 private:
-
-    std::string fileName;
-
     std::fstream file;
     _bitmapHeader bitmapHeader;
     _dibHeader	  dibHeader;
 
 	size_t	_fileSize{ 0 };
-
-	void readBitmapHeader();
-	void readDibHeader();
-
-    PixelMatrix pixels;
-
-
+    std::vector<Pixel> pixels;
 	DWORD _width, _height;
 
-public:
 
-	
+    void readBitmapHeader();
+    void readDibHeader();
+    size_t rowSz;                           //amount of bytes needed to get a entire row
+
+public:
 	Bitmap();
     Bitmap(Bitmap&& bitmap);
     Bitmap(const Bitmap& bitmap);
@@ -197,30 +182,17 @@ public:
     PixelMatrix& getPixels();
 
 	//file size in bytes
-    inline size_t size() const{
-        return this->_fileSize;
-    }
+    size_t size()   const noexcept { return this->_fileSize; }
+    DWORD width()   const noexcept { return this->_width; }
+    DWORD height()  const noexcept { return this->_height; }
 
-    inline DWORD width() const{
-        return this->_width;
-    }
-
-    inline DWORD height() const{
-        return this->_height;
-    }
-
-    std::vector<Pixel>& operator[](const size_t& y);
+    Bitmap::Pixel& pixel(const DWORD& x, const DWORD& y);
 
     Bitmap& operator=(const Bitmap& other);    //copy
     Bitmap& operator=(Bitmap&& other);          //move
 
-    inline operator bool() const{
-        return this->pixels.size() > 0;
-    }
-
-    inline bool operator!(){
-        return !(this);
-    }
+    operator bool() const{ return this->pixels.size() > 0; }
+    bool operator!(){ return !(this); }
 
 	~Bitmap();
 };
