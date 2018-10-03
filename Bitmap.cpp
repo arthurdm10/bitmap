@@ -5,21 +5,20 @@
 
 using namespace std;
 
-Bitmap::Bitmap(Bitmap &&bitmap)
-	:dibHeader(std::move(bitmap.dibHeader)),
-	bitmapHeader(std::move(bitmap.bitmapHeader)),
-	_fileSize(std::move(bitmap._fileSize)),
-	pixels(std::move(bitmap.pixels)),
-	_width(std::move(bitmap._width)),
-	_height(std::move(bitmap._height)){ }
 
-Bitmap::Bitmap(const Bitmap &bitmap)
-	:dibHeader(bitmap.dibHeader),
-	bitmapHeader(bitmap.bitmapHeader),
-	_fileSize(bitmap._fileSize),
+Bitmap::Bitmap(Bitmap &&bitmap) noexcept
+	:m_width(std::exchange(bitmap.m_width, 0x00)),
+	m_height(std::exchange(bitmap.m_height, 0x00)),
+	m_fileSize(std::exchange(bitmap.m_fileSize, 0x00)),
+	pixels(std::move(bitmap.pixels)),
+	rowSz(std::exchange(bitmap.rowSz, 0x00)){}
+
+Bitmap::Bitmap(const Bitmap &bitmap) noexcept
+	:m_width(bitmap.m_width),
+	m_height(bitmap.m_height),
+	m_fileSize(bitmap.m_fileSize),
 	pixels(bitmap.pixels),
-	_width(bitmap._width),
-	_height(bitmap._height){ }
+	rowSz(bitmap.rowSz){}
 
 Bitmap::Bitmap(const std::string& fileName) {
 	this->load(fileName);
@@ -29,56 +28,43 @@ Bitmap::Bitmap(const Bitmap::PixelMatrix &pixels) {
 	this->load(pixels);
 }
 
+Bitmap::Bitmap(Bitmap::PixelMatrix&& pixels) {
+	this->load(std::forward<PixelMatrix>(pixels));
+}
+
 bool Bitmap::load(const std::string& fileName) {
-	this->file.open(fileName.c_str(), std::ios::binary | std::ios::in);
+	std::ifstream file(fileName.c_str(), std::ios::binary);
 	if (file.is_open()) {
-		this->readBitmapHeader();
-		if (this->bitmapHeader.headerType != 0x4D42) {
-			throw std::runtime_error("Invalid file");
-		}
-
-		this->_fileSize = this->bitmapHeader.fileSize;
-
-		this->readDibHeader();
-		if (this->dibHeader.bitsPerPixel != 24) {
-			throw std::runtime_error("Bitmap file must be 24bits per pixel");
-		}
-
-		if (this->dibHeader.compression != 0) {
-			throw std::runtime_error("Compressed bitmap file not supported");
-		}
-
+		this->readBitmapHeader(file);
+		this->readDibHeader(file);
 	} else {
 		return false;
 	}
 
-	this->_width = this->dibHeader.width;
-	this->_height = this->dibHeader.height;
-
-	this->rowSz = 3 * this->_width;         //1 pixel = 3 bytes
-
-	if (this->_width == 0 || this->_height == 0) {
-		this->file.close();
+	if (m_width == 0 || m_height == 0) {
 		return false;
 	}
 
-	this->file.seekg(this->bitmapHeader.dataOffset);
-	this->pixels.resize(this->_height * this->_width);
 
-	for (DWORD i = 0; i < this->_height; ++i) {
-		auto pos = this->pixels.size() - (i * this->_width) - this->_width;
+	this->rowSz = 3 * m_width;         //1 pixel = 3 bytes
+
+
+	file.seekg(54, file.beg);
+	auto sz = m_width * m_height;
+	this->pixels.resize(sz);
+
+	for (DWORD i = 0; i < m_height; ++i) {
+		auto pos = sz - (i * m_width) - m_width;
 		file.read(reinterpret_cast<char*>(&this->pixels[pos]), this->rowSz);
-		file.seekg(this->_width % 4, file.cur);
+		file.seekg(m_width % 4, file.cur);
 	}
 
-	this->file.close();
 	return true;
 }
 
 bool Bitmap::load(const PixelMatrix& pixels) {
 
-	if (pixels.size() == 0 || pixels[0].size() == 0) {
-		//vector is empty
+	if (pixels.empty() || pixels[0].empty()) {
 		return false;
 	}
 
@@ -86,8 +72,8 @@ bool Bitmap::load(const PixelMatrix& pixels) {
 	auto sz = pixels[0].size();
 	auto p2 = std::any_of(std::begin(pixels),
 		std::end(pixels),
-		[&sz](const auto& item) {
-		return item.size() != sz;
+		[&sz](const auto& row) {
+		return row.size() != sz;
 	});
 
 	if (p2) {
@@ -95,26 +81,21 @@ bool Bitmap::load(const PixelMatrix& pixels) {
 		throw std::runtime_error("All rows must have the same size");
 	}
 
-	this->_width = sz;
-	this->_height = pixels.size();
-	this->rowSz = 3 * this->_width;
+	m_width = sz;
+	m_height = pixels.size();
+	this->rowSz = 3 * m_width;
 
 
-	this->pixels.reserve(this->_width * this->_height);
+	this->pixels.reserve(m_width * m_height);
 
 	std::for_each(std::begin(pixels),
 		std::end(pixels),
 		[this](auto& row) {
-		this->pixels.insert(this->pixels.end(), row.begin(), row.end());
+		this->pixels.insert(this->pixels.end(), row.cbegin(), row.cend());
 	});
 
 
-	this->bitmapHeader.fileSize = 54 + (this->pixels.size() * 3) + (this->_width % 4) * this->pixels.size();
-
-	this->dibHeader.width = this->_width;
-	this->dibHeader.height = this->_height;
-	this->dibHeader.dataSize = 0x00;
-
+	m_fileSize = 54 + (this->pixels.size() * 3) + (m_width % 4) * this->pixels.size();
 
 	return true;
 }
@@ -124,36 +105,42 @@ bool Bitmap::save(const std::string& fileName) {
 		return false;
 	}
 
-	std::fstream output(fileName, std::ios::binary | std::ios::out);
+	std::ofstream output(fileName, std::ios::binary);
 
 	if (output.is_open()) {
 
-		writeToStream(output, this->bitmapHeader.headerType);
-		writeToStream(output, this->bitmapHeader.fileSize);
-		writeToStream(output, this->bitmapHeader.r0);
-		writeToStream(output, this->bitmapHeader.r1);
-		writeToStream(output, this->bitmapHeader.dataOffset);
+		//bitmapHeader
+		writeToStream(output, 0x4d42, 2);
+		writeToStream(output, m_fileSize, 4);
+		writeToStream(output, 0, 2);
+		writeToStream(output, 0, 2);
+		writeToStream(output, 54, 4);
 
-		writeToStream(output, this->dibHeader.headerSize);
-		writeToStream(output, this->dibHeader.width);
-		writeToStream(output, this->dibHeader.height);
-		writeToStream(output, this->dibHeader.colorPlanes);
-		writeToStream(output, this->dibHeader.bitsPerPixel);
-		writeToStream(output, this->dibHeader.compression);
-		writeToStream(output, this->dibHeader.dataSize);
-		writeToStream(output, this->dibHeader.xResolution);
-		writeToStream(output, this->dibHeader.yResolution);
-		writeToStream(output, this->dibHeader.numPalleteColors);
-		writeToStream(output, this->dibHeader.importantColors);
+		//dibHeader
+		writeToStream(output, 40, 4);
+		writeToStream(output, m_width, 4);
+		writeToStream(output, m_height, 4);
+		writeToStream(output, 1, 2);
+		writeToStream(output, 24, 2);
+		writeToStream(output, 0, 4);
+		writeToStream(output, 0, 4);
+		writeToStream(output, 0, 4);
+		writeToStream(output, 0, 4);
+		writeToStream(output, 0, 4);
+		writeToStream(output, 0, 4);
 
 		//row padding
-		WORD paddSz = this->_width % 4;
+		WORD paddSz = m_width % 4;
 		char *padd = new char[paddSz];
 		memset(padd, 0x00, paddSz);
+		
+		const auto sz = this->pixels.size();
+		const auto height = m_height;
+		const auto data = this->pixels.data();
 
-		for (DWORD i = 0; i < this->_height; i++) {
-			int pos = this->pixels.size() - (i * this->_width) - this->_width;
-			output.write(reinterpret_cast<char*>(&this->pixels[pos]), this->rowSz);
+		for (DWORD i = 0; i < height; i++) {
+			int pos = sz - (i * m_width) - m_width;
+			output.write(reinterpret_cast<char*>((data + pos)), this->rowSz);
 			output.write(padd, paddSz);
 		}
 
@@ -164,102 +151,154 @@ bool Bitmap::save(const std::string& fileName) {
 	return false;
 }
 
+Bitmap Bitmap::roi(DWORD x, DWORD y, DWORD width, DWORD height) {
+	
+	if (x + width - 1 < m_width && y + height - 1 < m_height) {
+		PixelMatrix pixels(height, std::vector<Pixel>(width));
+
+	
+		auto _y = y;
+		Pixel* rowData;
+		const auto data = this->pixels.data();
+
+		for(auto& row : pixels){
+			auto pxPos = _y * m_width;
+
+			rowData = row.data();
+			for (DWORD _x = x; _x < width + x ; ++_x) {
+				*rowData = *(data + (pxPos + _x));
+				++rowData;
+			}
+			++_y;
+		}
+
+		return Bitmap(std::move(pixels));
+	}
+
+}
+
 void Bitmap::mirror() {
-	for (DWORD i = 0; i < this->_height; i++) {
-		int row = i * this->_width;
-		auto itBeg = this->pixels.begin() + row;
-		std::reverse(itBeg, itBeg + this->_width);
+	const auto itBeg = this->pixels.begin();
+	
+	for (DWORD i = 0; i < m_height; i++) {
+		auto row = i * m_width;
+		auto it = itBeg + row;
+		std::reverse(it, it + m_width);
 	}
 }
 
-Bitmap::Pixel& Bitmap::getPixel(const DWORD& x, const DWORD& y){
-	if (x > this->_width || y > this->_height) {
+void Bitmap::toGrayScale() {
+	float value = 0;
+	for (auto& pixel : this->pixels) {
+		value = 0.21f * pixel.r + 0.72f * pixel.g + 0.07f * pixel.b;
+		pixel.r = pixel.b = pixel.g = static_cast<byte>(value);
+	}
+}
+
+void Bitmap::flipLeft() {
+	std::vector<Pixel> copy(std::move(this->pixels));
+
+	this->pixels.resize(copy.size());
+	const auto data = copy.data();
+
+	auto thisData = this->pixels.data();
+
+	for (DWORD x = 0; x < m_width; ++x) {
+		for (DWORD y = 0; y < m_height; ++y) {
+			/*same as this->pixels[i++] = data[y * m_width + x]*/
+			*thisData = *(data + (y * m_width + x));
+			++thisData;
+		}
+	}
+	std::swap(m_width, m_height);
+	this->rowSz = m_width * 3;
+}
+
+void Bitmap::flipRight() {
+	flipLeft();
+	mirror();
+}
+
+
+Bitmap::Pixel& Bitmap::operator()(DWORD x, DWORD y) {
+	if (x > m_width || y > m_height) {
 		char msg[255];
-		snprintf(msg, 254, "Bitmap::getPixel -- Coord X:%d Y:%d out of range. Width is %d and Height is %d", 
-																	x,y,
-																	this->_width, this->_height);
+		snprintf(msg, 254, "Bitmap(%d, %d) -- Coord X:%d Y:%d out of range. Width is %d and Height is %d",
+			x, y,
+			x, y,
+			m_width, m_height);
 		throw std::out_of_range(msg);
 	}
 
-	return this->pixels[y * this->_width + x];
+	return this->pixels[y * m_width + x];
 }
 
-void Bitmap::rgbToGrayScale() {
-	for (auto& pixel : this->pixels) {
-		DWORD sum = pixel.r + pixel.g + pixel.b;
-		sum /= 3;
-		pixel.r = pixel.b = pixel.g = static_cast<byte>(sum);
+void Bitmap::readBitmapHeader(std::ifstream& file) {
+	WORD header;
+	readFromStream(file, header);
+
+	if (header != 0x4D42) {
+		std::exception("Invalid bitmap file");
+	}
+
+	readFromStream(file, m_fileSize);
+	file.seekg(12, file.cur);
+}
+
+void Bitmap::readDibHeader(std::ifstream& file) {
+	readFromStream(file, m_width);
+	readFromStream(file, m_height);
+	file.seekg(2, file.cur);
+
+	WORD bitsPixel = 0;
+	readFromStream(file, bitsPixel);
+
+	if (bitsPixel != 24) {
+		throw std::exception("Bitmap must be 24bits per pixel");
+	}
+
+	DWORD compression;
+
+	readFromStream(file, compression);
+
+	if (compression != 0x0000) {
+		throw std::exception("Bitmap can not be compressed");
 	}
 }
 
-void Bitmap::readBitmapHeader() {
-	readFromStream(this->file, this->bitmapHeader.headerType);
-	readFromStream(this->file, this->bitmapHeader.fileSize);
-	readFromStream(this->file, this->bitmapHeader.r0);
-	readFromStream(this->file, this->bitmapHeader.r1);
-	readFromStream(this->file, this->bitmapHeader.dataOffset);
-}
-
-void Bitmap::readDibHeader() {
-	readFromStream(this->file, this->dibHeader.headerSize);
-	readFromStream(this->file, this->dibHeader.width);
-	readFromStream(this->file, this->dibHeader.height);
-	readFromStream(this->file, this->dibHeader.colorPlanes);
-	readFromStream(this->file, this->dibHeader.bitsPerPixel);
-	readFromStream(this->file, this->dibHeader.compression);
-	readFromStream(this->file, this->dibHeader.dataSize);
-	readFromStream(this->file, this->dibHeader.xResolution);
-	readFromStream(this->file, this->dibHeader.yResolution);
-	readFromStream(this->file, this->dibHeader.numPalleteColors);
-	readFromStream(this->file, this->dibHeader.importantColors);
-}
-
-Bitmap::Pixel& Bitmap::pixel(const DWORD& x, const DWORD& y) {
-	if (y >= this->_height || x >= this->_width) {
-		throw std::range_error(std::string("Invalid Pixel position {" + to_string(x) + ", " + to_string(y) + " }"));
+Bitmap& Bitmap::operator=(const Bitmap &rhs) {
+	if (this != &rhs) {
+		this->pixels = rhs.pixels;
+		m_width = rhs.m_width;
+		m_height = rhs.m_height;
+		m_fileSize = rhs.m_fileSize;
 	}
-
-	return this->pixels[y * this->_width + x];
-}
-
-Bitmap& Bitmap::operator=(const Bitmap &other) {
-	if (*this == other) {
-		return *this;
-	}
-	this->pixels = other.pixels;
-	this->_width = other._width;
-	this->_height = other._height;
-	this->_fileSize = other._fileSize;
-	this->dibHeader = other.dibHeader;
-	this->bitmapHeader = other.bitmapHeader;
-
 	return *this;
 }
 
-Bitmap& Bitmap::operator=(Bitmap&& other) {
-	if (*this == other) {
-		return *this;
+Bitmap& Bitmap::operator=(Bitmap&& rhs) {
+	if (this != &rhs) {
+		this->pixels = std::move(rhs.pixels);
+		m_width	   = std::exchange(rhs.m_width, 0x00);
+		m_height   = std::exchange(rhs.m_height, 0x00);
+		m_fileSize = std::exchange(rhs.m_fileSize, 0x00);
 	}
-	this->pixels = std::move(other.pixels);
-	this->_width = std::move(other._width);
-	this->_height = std::move(other._height);
-	this->_fileSize = std::move(other._fileSize);
-	this->file = std::move(other.file);
-	this->dibHeader = std::move(other.dibHeader);
-	this->bitmapHeader = std::move(other.bitmapHeader);
-
 	return *this;
 }
 
-bool Bitmap::operator==(const Bitmap& other) {
-	return(other._width == this->_width &&
-		other._height == this->_height &&
-		other.pixels == this->pixels);
+bool Bitmap::operator==(const Bitmap& rhs) {
+	if (this->pixels.size() != rhs.pixels.size()) {
+		return false;
+	}
+
+	return (this->pixels == rhs.pixels);
 }
 
 
 std::ostream& operator<<(std::ostream & out, const Bitmap::Pixel & pixel) {
-	return out << "R:" << static_cast<int>(pixel.r) << "\nG:" << static_cast<int>(pixel.g) << "\nB:" << static_cast<int>(pixel.b);
+	auto[b, g, r] = pixel;
+	out << "(" << static_cast<int>(r) << ", " << static_cast<int>(g) << ", " << static_cast<int>(b) << ")";
+	return out;
 }
 
 

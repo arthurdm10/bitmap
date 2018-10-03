@@ -1,224 +1,92 @@
 #pragma once
+
+#define _HAS_STD_BYTE 0
+
 #include <fstream>
 #include <string>
 #include <vector>
 #include <memory>
-#include <string.h>
+#include <utility>
 
 
-#ifndef _WIN32
-typedef unsigned char byte;
-typedef unsigned short WORD;
-typedef unsigned int DWORD;
-typedef unsigned int UINT;
-#else
-#include <Windows.h>
-#endif
+using byte = unsigned char;
+using WORD = unsigned short;
+using DWORD = unsigned int;
+using UINT = unsigned int;
+
 
 class Bitmap {
 public:
-
 	struct Pixel {
 		byte b, g, r;
 
-		Pixel() { }
+		Pixel() {}
 
 		Pixel(byte b, byte g, byte r) :
-			b(b), g(g), r(r) { }
+			b(b), g(g), r(r) {}
+
+		Pixel(Pixel&& p) noexcept :
+			b(std::exchange(p.b, 0x00)),
+			g(std::exchange(p.g, 0x00)),
+			r(std::exchange(p.r, 0x00)) {}
 
 		Pixel(const Pixel& other)
-			:b(other.b), g(other.g), r(other.r) { }
+			:b(other.b), g(other.g), r(other.r) {}
 
-		Pixel& operator=(const Pixel& other) {
-			this->b = other.b;
-			this->g = other.g;
-			this->r = other.r;
+		Pixel& operator=(const Pixel& rhs) {
+			if (this != &rhs) {
+				this->b = rhs.b;
+				this->g = rhs.g;
+				this->r = rhs.r;
+			}
 			return *this;
 		}
 
-	
+		bool operator==(const Pixel& rhs) {
+			return (this->b == rhs.b &&
+					this->g == rhs.g &&
+					this->r == rhs.r);
+		}
+
+		bool operator!=(const Pixel& rhs) { return !(*this == rhs); }
+
 	};
 
-	bool operator== (const Bitmap& other);
 
 private:
-	struct _bitmapHeader {
-		friend bool Bitmap::operator== (const Bitmap& other);
-
-		WORD	headerType = 0x4D42;
-		DWORD	fileSize;
-		WORD	r0 = 0,
-				r1 = 0;
-
-		DWORD	dataOffset = 54;
-		
-		_bitmapHeader() = default;
-
-		_bitmapHeader(const _bitmapHeader& other)
-			:headerType(other.headerType),
-			fileSize(other.fileSize),
-			dataOffset(other.dataOffset) { }
-
-		_bitmapHeader(_bitmapHeader&& other)
-			:headerType(std::move(other.headerType)),
-			fileSize(std::move(other.fileSize)),
-			dataOffset(std::move(other.dataOffset)) { }
-
-
-		_bitmapHeader& operator= (const _bitmapHeader&& other) {
-			this->headerType = std::move(other.headerType);
-			this->fileSize = std::move(other.fileSize);
-			this->dataOffset = std::move(other.dataOffset);
-			return *this;
-		}
-
-		_bitmapHeader& operator= (const _bitmapHeader& other) {
-			this->headerType = other.headerType;
-			this->fileSize = other.fileSize;
-			this->dataOffset = other.dataOffset;
-			return *this;
-		}
-
-		bool operator== (const _bitmapHeader& other) const{
-			return (this->headerType == other.headerType &&
-				this->fileSize == other.fileSize &&
-				this->dataOffset == other.dataOffset);
-		}
-
-		bool operator!= (const _bitmapHeader& other) const { return !(*this == other); }
-	};
-
-	struct _dibHeader {
-		friend bool Bitmap::operator== (const Bitmap& other);
-		DWORD headerSize = 40,
-			width,
-			height;
-
-		WORD colorPlanes = 1;
-		WORD bitsPerPixel = 24;
-		DWORD compression = 0;
-		DWORD dataSize;
-
-		DWORD xResolution = 0,
-			yResolution = 0;
-
-		DWORD numPalleteColors = 0;
-		DWORD importantColors = 0;
-		
-		_dibHeader() = default;
-
-		_dibHeader(const _dibHeader& other)
-			:headerSize(other.headerSize),
-			width(other.width),
-			height(other.height),
-			colorPlanes(other.colorPlanes),
-			bitsPerPixel(other.bitsPerPixel),
-			compression(other.compression),
-			dataSize(other.dataSize),
-			xResolution(other.xResolution),
-			yResolution(other.yResolution),
-			numPalleteColors(other.numPalleteColors),
-			importantColors(other.importantColors) { }
-		
-		_dibHeader(_dibHeader&& other)
-			:headerSize(std::move(other.headerSize)),
-			width(std::move(other.width)),
-			height(std::move(other.height)),
-			colorPlanes(std::move(other.colorPlanes)),
-			bitsPerPixel(std::move(other.bitsPerPixel)),
-			compression(std::move(other.compression)),
-			dataSize(std::move(other.dataSize)),
-			xResolution(std::move(other.xResolution)),
-			yResolution(std::move(other.yResolution)),
-			numPalleteColors(std::move(other.numPalleteColors)),
-			importantColors(std::move(other.importantColors)) { }
-
-		
-
-		_dibHeader& operator= (_dibHeader&& other) {
-			this->headerSize = std::move(other.headerSize);
-			this->width = std::move(other.width);
-			this->height = std::move(other.height);
-			this->colorPlanes = std::move(other.colorPlanes);
-			this->bitsPerPixel = std::move(other.bitsPerPixel);
-			this->compression = std::move(other.compression);
-			this->dataSize = std::move(other.dataSize);
-			this->xResolution = std::move(other.xResolution);
-			this->yResolution = std::move(other.yResolution);
-			this->numPalleteColors = std::move(other.numPalleteColors);
-			this->importantColors = std::move(other.importantColors);
-
-			return *this;
-		}
-
-		_dibHeader& operator= (const _dibHeader& other) {
-			this->headerSize = other.headerSize;
-			this->width = other.width;
-			this->height = other.height;
-			this->colorPlanes = other.colorPlanes;
-			this->bitsPerPixel = other.bitsPerPixel;
-			this->compression = other.compression;
-			this->dataSize = other.dataSize;
-			this->xResolution = other.xResolution;
-			this->yResolution = other.yResolution;
-			this->numPalleteColors = other.numPalleteColors;
-			this->importantColors = other.importantColors;
-
-			return *this;
-		}
-
-		bool operator!= (const _dibHeader& other) const { return !(*this == other); }
-
-		bool operator== (const _dibHeader& other) const {
-			return (this->headerSize == other.headerSize &&
-				this->width == other.width &&
-				this->height == other.height &&
-				this->colorPlanes == other.colorPlanes &&
-				this->bitsPerPixel == other.bitsPerPixel &&
-				this->compression == other.compression &&
-				this->dataSize == other.dataSize &&
-				this->xResolution == other.xResolution  &&
-				this->yResolution == other.yResolution &&
-				this->numPalleteColors == other.numPalleteColors &&
-				this->importantColors == other.importantColors);
-		}
-	};
-
-
-
 	template<class T>
-	void readFromStream(std::fstream& file, T& dest, const size_t& sz = sizeof(T)) {
+	inline void readFromStream(std::ifstream& file, T& dest, const size_t& sz = sizeof(T)) {
 		file.read(reinterpret_cast<char*>(&dest), sz);
 	}
 
 	template<class T>
-	void writeToStream(std::fstream& file, T& src, const size_t& sz = sizeof(T)) {
-		file.write(reinterpret_cast<char*>(&src), sz);
+	inline void writeToStream(std::ofstream& file, const T& src, const size_t& sz = sizeof(T)) {
+		file.write(reinterpret_cast<const char*>(&src), sz);
 	}
 
 public:
 	typedef std::vector<std::vector<Bitmap::Pixel>> PixelMatrix;
 
 private:
-	std::fstream file;
-	_bitmapHeader bitmapHeader;
-	_dibHeader	  dibHeader;
-
-	size_t	_fileSize{ 0 };
 	std::vector<Pixel> pixels;
-	DWORD _width, _height;
 
 
-	void readBitmapHeader();
-	void readDibHeader();
+	void readBitmapHeader(std::ifstream& file);
+	void readDibHeader(std::ifstream& file);
 	size_t rowSz;                           //amount of bytes needed to get a entire row
+	
+	DWORD m_fileSize,
+		m_width,
+		m_height;
 
 public:
 	Bitmap() = default;
-	Bitmap(Bitmap&& bitmap);
-	Bitmap(const Bitmap& bitmap);
+	Bitmap(Bitmap&& bitmap) noexcept;
+	Bitmap(const Bitmap& bitmap) noexcept;
 	Bitmap(const std::string& fileName);
 	Bitmap(const PixelMatrix& pixels);
+	Bitmap(PixelMatrix&& pixels);
+
 	bool load(const std::string& fileName);
 
 	//create a bitmap from a matrix of pixels
@@ -226,28 +94,31 @@ public:
 	bool save(const std::string& fileName);
 
 
+	Bitmap roi(DWORD x, DWORD y, DWORD width, DWORD height);
+
+	void toGrayScale();
+	
 	void mirror();
+	void horizontalMirror() { flip180(); mirror(); }
+	void flip180() { std::reverse(pixels.begin(), pixels.end()); }
+	void flipLeft();
+	void flipRight();
 
-	void rgbToGrayScale();
+	Pixel& operator()(DWORD x, DWORD y);
 
-	Pixel& getPixel(const DWORD& x, const DWORD& y);
-
-	//file size in bytes
-	size_t size()   const noexcept { return this->_fileSize; }
-	DWORD width()   const noexcept { return this->_width; }
-	DWORD height()  const noexcept { return this->_height; }
-
-	Bitmap::Pixel& pixel(const DWORD& x, const DWORD& y);
+	std::size_t fileSize()	const noexcept { return m_fileSize; }
+	std::size_t dataSize()	const noexcept { return m_width * m_height * 3; }
+	DWORD width()			const noexcept { return m_width; }
+	DWORD height()			const noexcept { return m_height; }
 
 	Bitmap& operator=(const Bitmap& other);    //copy
 	Bitmap& operator=(Bitmap&& other);          //move
+	bool operator== (const Bitmap& other);
 
 	operator bool() const { return this->pixels.size() > 0; }
-	bool operator!() const { return !(this); }
+	bool operator!() const { return !(*this); }
 
 	~Bitmap() = default;
 };
 
 std::ostream& operator<< (std::ostream& out, const Bitmap::Pixel& pixel);
-bool operator== (const Bitmap::Pixel& p1, const Bitmap::Pixel& p2);
-bool operator!= (const Bitmap::Pixel& p1, const Bitmap::Pixel& p2);
