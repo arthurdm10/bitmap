@@ -23,8 +23,8 @@ int main(){
 
 	img.load(pixels);
 
-	//print pixel RGB values
-    img.save("random.bmp");
+	img.flip180();
+    	img.save("random.bmp");
  
     return 0;
 }
